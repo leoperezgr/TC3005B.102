@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estimador COCOMO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --paper:#f3f5f1; --card:#ffffff; --ink:#1b2430; --muted:#5b6671; --line:#d6dbd3;
+  --accent:#0d6b67; --on-accent:#ffffff; --accent-soft:#e0efec; --amber:#a86a12; --amber-soft:#f7ecd9;
+  --ok:#237a3b; --bad:#b3372c;
+  --sans:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#12171b; --card:#1a2126; --ink:#e4e9e6; --muted:#98a3a6; --line:#2c363b;
+    --accent:#4fbfb6; --on-accent:#0b1412; --accent-soft:#16312f; --amber:#e0a54a; --amber-soft:#35291a;
+    --ok:#6cc784; --bad:#ef7d70; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12171b; --card:#1a2126; --ink:#e4e9e6; --muted:#98a3a6; --line:#2c363b;
+  --accent:#4fbfb6; --on-accent:#0b1412; --accent-soft:#16312f; --amber:#e0a54a; --amber-soft:#35291a;
+  --ok:#6cc784; --bad:#ef7d70; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;margin:0;padding:24px 16px 48px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header h1{font-size:28px;font-weight:800;letter-spacing:-.02em;margin:0;text-wrap:balance}
+header p{margin:4px 0 0;color:var(--muted);max-width:72ch}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.tab{font:600 14px var(--sans);background:none;border:0;border-bottom:3px solid transparent;color:var(--muted);padding:10px 14px;cursor:pointer}
+.tab[aria-selected="true"]{color:var(--accent);border-color:var(--accent)}
+.tab:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start}
+.col{display:flex;flex-direction:column;gap:20px;min-width:0}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
+h2{font-size:17px;margin:0;font-weight:700}
+h3{font-size:12px;margin:0;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.row{display:flex;gap:16px;flex-wrap:wrap}
+.spread{justify-content:space-between;align-items:center}
+.field{display:flex;flex-direction:column;gap:4px;min-width:140px;flex:1}
+label{font-size:13px;font-weight:600}
+.hint{font-size:12px;color:var(--muted)}
+input,select{font:500 15px var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%}
+input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex-wrap:wrap}
+.seg button{flex:1;font:600 13px var(--sans);padding:9px 10px;border:0;background:var(--card);color:var(--muted);cursor:pointer;min-width:110px}
+.seg button + button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
+.btn{font:600 14px var(--sans);padding:9px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);cursor:pointer}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn.sm{padding:4px 10px;font-size:12px}
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+td select{padding:5px 6px;font-size:13px;min-width:120px}
+td input{padding:5px 6px;font-size:13px;width:64px}
+td input.wide{width:100%;min-width:180px;font-family:var(--sans)}
+tfoot td{font-weight:700;border-bottom:0}
+.mult-hi{color:var(--bad)} .mult-lo{color:var(--ok)}
+.results{position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)}
+.big{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.metric{background:var(--paper);border-radius:8px;padding:12px}
+.metric .v{font:600 24px var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.metric .u{font-size:12px;color:var(--muted)}
+.metric.main{grid-column:1/-1;background:var(--accent-soft)}
+.metric.main .v{font-size:34px;color:var(--accent)}
+.formula{font:13px/1.7 var(--mono);background:var(--paper);border-radius:8px;padding:12px;white-space:pre-wrap;word-break:break-word;margin:0}
+.chip{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:99px;background:var(--amber-soft);color:var(--amber)}
+.mv{display:inline-block;width:22px;text-align:center;font:700 12px var(--mono);border-radius:4px;background:var(--accent-soft);color:var(--accent)}
+.mv.rw{background:var(--amber-soft);color:var(--amber)}
+.bars{display:flex;flex-direction:column;gap:8px}
+.bar{display:grid;grid-template-columns:110px 1fr 70px;gap:8px;align-items:center;font-size:13px}
+.bar .track{height:10px;background:var(--paper);border-radius:5px;overflow:hidden}
+.bar .fill{height:100%;background:var(--line);border-radius:5px}
+.bar .fill.on{background:var(--accent)}
+.bar span:last-child{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.check{border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.check .head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+.src{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.pass{color:var(--ok);font-weight:700} .fail{color:var(--bad);font-weight:700}
+.note{font-size:13px;color:var(--muted);max-width:75ch;margin:0}
+.checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Estimador COCOMO</h1>
+    <p>Estimación de software con los tres modelos de la clase: COCOMO (básico e intermedio), COSMIC y Puntos de Función IFPUG. Los Puntos de Función se pueden convertir a KLOC para alimentar COCOMO.</p>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-view="v-cocomo">COCOMO</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="v-cosmic">COSMIC</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="v-fp">Puntos de Función</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="v-ej">Ejercicios de clase</button>
+  </nav>
+
+  <!-- ============ COCOMO ============ -->
+  <div id="v-cocomo" class="grid">
+    <div class="col">
+      <section class="panel">
+        <div class="row spread"><h2>Proyecto</h2><span class="chip" id="ejemplo-chip">Proyecto de ejemplo</span></div>
+        <div class="row">
+          <div class="field" style="flex:2"><label for="nombre">Nombre</label><input id="nombre" value="Sistema web de control escolar"></div>
+          <div class="field"><label for="kloc">Tamaño (KLOC)</label><input id="kloc" type="number" min="0" step="0.1" value="10.39"><span class="hint">196.1 PF × 53 LOC/PF (Java)</span></div>
+        </div>
+        <div class="field"><label>Nivel del modelo</label>
+          <div class="seg" id="modelo">
+            <button aria-pressed="true" data-v="basico">Básico</button>
+            <button aria-pressed="false" data-v="intermedio">Intermedio (15 cost drivers)</button>
+          </div>
+        </div>
+        <div class="field"><label>Modo de desarrollo</label>
+          <div class="seg" id="modo">
+            <button aria-pressed="true" data-v="organico">Orgánico</button>
+            <button aria-pressed="false" data-v="semi">Semi-acoplado</button>
+            <button aria-pressed="false" data-v="empotrado">Empotrado</button>
+          </div>
+          <span class="hint" id="modo-desc"></span>
+        </div>
+        <div class="field"><label for="sueldo">Costo por persona-mes (opcional)</label><input id="sueldo" type="number" min="0" step="100" value="35000"><span class="hint">Por ejemplo, en MXN</span></div>
+      </section>
+
+      <section class="panel" id="drivers-panel">
+        <div class="row spread"><h2>Cost drivers (EAF)</h2><button class="btn ghost" id="reset-drivers">Todos en Nominal</button></div>
+        <p class="note">Los 15 atributos de Boehm (1981). El factor de ajuste EAF es el producto de los multiplicadores; valores mayores a 1 aumentan el esfuerzo.</p>
+        <div class="tbl-wrap"><table id="drivers"><thead><tr><th>Atributo</th><th>Descripción</th><th>Nivel</th><th class="num">Mult.</th></tr></thead><tbody></tbody></table></div>
+      </section>
+
+      <section class="panel">
+        <h2>Constantes (variables por compañía)</h2>
+        <div class="tbl-wrap"><table id="const-tbl"><thead><tr><th>Modo</th><th class="num">a</th><th class="num">b</th><th class="num">c</th><th class="num">d</th></tr></thead><tbody></tbody></table></div>
+      </section>
+    </div>
+
+    <aside class="panel results" aria-live="polite">
+      <h3>Resultado</h3>
+      <div class="big">
+        <div class="metric main"><div class="v" id="r-e">—</div><div class="u">Esfuerzo E (persona-mes)</div></div>
+        <div class="metric"><div class="v" id="r-d">—</div><div class="u">Tiempo D (meses)</div></div>
+        <div class="metric"><div class="v" id="r-p">—</div><div class="u">Personal P (personas)</div></div>
+        <div class="metric"><div class="v" id="r-prod">—</div><div class="u">Productividad (LOC/PM)</div></div>
+        <div class="metric"><div class="v" id="r-c">—</div><div class="u">Costo estimado</div></div>
+      </div>
+      <h3>Desarrollo del cálculo</h3>
+      <pre class="formula" id="formula"></pre>
+      <h3>Esfuerzo según el modo</h3>
+      <div class="bars" id="bars"></div>
+    </aside>
+  </div>
+
+  <!-- ============ COSMIC ============ -->
+  <div id="v-cosmic" class="grid hidden">
+    <div class="col">
+      <section class="panel">
+        <div class="row spread"><h2>Procesos funcionales</h2><button class="btn ghost sm" id="add-proc">Agregar proceso</button></div>
+        <p class="note">Cada movimiento de datos vale 1 CFP. <span class="mv">E</span> Entrada · <span class="mv">X</span> Salida · <span class="mv rw">R</span> Lectura · <span class="mv rw">W</span> Escritura.</p>
+        <div class="tbl-wrap"><table id="cosmic-tbl">
+          <thead><tr><th>Proceso</th><th class="num">E</th><th class="num">X</th><th class="num">R</th><th class="num">W</th><th class="num">CFP</th><th></th></tr></thead>
+          <tbody></tbody>
+          <tfoot><tr><td>Total</td><td class="num" id="c-E"></td><td class="num" id="c-X"></td><td class="num" id="c-R"></td><td class="num" id="c-W"></td><td class="num" id="c-T"></td><td></td></tr></tfoot>
+        </table></div>
+      </section>
+    </div>
+    <aside class="panel results">
+      <h3>Resultado</h3>
+      <div class="big">
+        <div class="metric main"><div class="v" id="cs-cfp">—</div><div class="u">Tamaño funcional (CFP)</div></div>
+        <div class="metric"><div class="v" id="cs-h">—</div><div class="u">Esfuerzo (horas-persona)</div></div>
+        <div class="metric"><div class="v" id="cs-pm">—</div><div class="u">Esfuerzo (persona-mes)</div></div>
+      </div>
+      <div class="row">
+        <div class="field"><label for="tasa">Tasa (horas-persona/CFP)</label><input id="tasa" type="number" min="0" step="0.5" value="8"></div>
+        <div class="field"><label for="hmes">Horas por persona-mes</label><input id="hmes" type="number" min="1" step="1" value="160"></div>
+      </div>
+      <pre class="formula" id="cs-formula"></pre>
+    </aside>
+  </div>
+
+  <!-- ============ FP ============ -->
+  <div id="v-fp" class="grid hidden">
+    <div class="col">
+      <section class="panel">
+        <h2>Componentes IFPUG</h2>
+        <p class="note">Captura cuántos componentes hay de cada complejidad. El peso de cada celda aparece debajo.</p>
+        <div class="tbl-wrap"><table id="fp-tbl"><thead><tr><th>Componente</th><th class="num">Baja</th><th class="num">Media</th><th class="num">Alta</th><th class="num">Subtotal</th></tr></thead><tbody></tbody>
+          <tfoot><tr><td>UFP total</td><td></td><td></td><td></td><td class="num" id="fp-tot"></td></tr></tfoot></table></div>
+      </section>
+      <section class="panel">
+        <div class="row spread"><h2>Características generales (TDI)</h2><span class="hint">Cada una de 0 a 5 · TDI de 0 a 70</span></div>
+        <div class="tbl-wrap"><table id="gsc-tbl"><tbody></tbody><tfoot><tr><td>TDI</td><td class="num" id="tdi-tot"></td></tr></tfoot></table></div>
+      </section>
+    </div>
+    <aside class="panel results">
+      <h3>Resultado</h3>
+      <div class="big">
+        <div class="metric"><div class="v" id="fp-ufp">—</div><div class="u">UFP</div></div>
+        <div class="metric"><div class="v" id="fp-vaf">—</div><div class="u">VAF</div></div>
+        <div class="metric main"><div class="v" id="fp-fp">—</div><div class="u">PFA (Puntos de Función Ajustados)</div></div>
+      </div>
+      <pre class="formula" id="fp-formula"></pre>
+      <h3>Conversión a KLOC</h3>
+      <div class="row">
+        <div class="field"><label for="lang">Lenguaje</label><select id="lang"></select></div>
+        <div class="field"><label for="locfp">LOC por PF</label><input id="locfp" type="number" min="1" step="1"></div>
+      </div>
+      <div class="metric"><div class="v" id="fp-kloc">—</div><div class="u">KLOC estimadas</div></div>
+      <button class="btn" id="to-cocomo">Usar este tamaño en COCOMO</button>
+      <span class="hint">Factores LOC/PF aproximados (tablas de backfiring de Jones y QSM). Ajústalos si tu equipo tiene datos propios.</span>
+    </aside>
+  </div>
+
+  <!-- ============ EJERCICIOS ============ -->
+  <div id="v-ej" class="hidden col">
+    <section class="panel">
+      <h2>Comprobación con el material de clase</h2>
+      <p class="note">Cada caso se calcula con el mismo código de la aplicación y se compara contra el valor de la presentación “Modelos de Estimación” (TC3005B). Se acepta una diferencia por redondeo de ±0.1 en esfuerzo y tiempo. Pulsa “Cargar” para abrirlo en su pestaña.</p>
+      <div class="checks" id="checks"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+/* ===================== COCOMO ===================== */
+const COEF = {
+  basico:     {organico:[2.4,1.05,2.5,0.38], semi:[3.0,1.12,2.5,0.35], empotrado:[3.6,1.20,2.5,0.32]},
+  intermedio: {organico:[3.2,1.05,2.5,0.38], semi:[3.0,1.12,2.5,0.35], empotrado:[2.8,1.20,2.5,0.32]}
+};
+const MODO_TXT = {
+  organico:"Equipo pequeño, problema conocido, poca innovación.",
+  semi:"Equipo con experiencia mixta, complejidad media.",
+  empotrado:"Restricciones fuertes: hardware, tiempo real o normativas."
+};
+const MODO_NOM = {organico:"Orgánico", semi:"Semi-acoplado", empotrado:"Empotrado"};
+const NIV = ["Muy bajo","Bajo","Nominal","Alto","Muy alto","Extra alto"];
+const DRV = [
+ ["Producto"],
+ ["RELY","Fiabilidad requerida",[.75,.88,1,1.15,1.40,null]],
+ ["DATA","Tamaño de la base de datos",[null,.94,1,1.08,1.16,null]],
+ ["CPLX","Complejidad del producto",[.70,.85,1,1.15,1.30,1.65]],
+ ["Hardware"],
+ ["TIME","Restricción de tiempo de ejecución",[null,null,1,1.11,1.30,1.66]],
+ ["STOR","Restricción de memoria",[null,null,1,1.06,1.21,1.56]],
+ ["VIRT","Volatilidad de la máquina virtual",[null,.87,1,1.15,1.30,null]],
+ ["TURN","Tiempo de respuesta del computador",[null,.87,1,1.07,1.15,null]],
+ ["Personal"],
+ ["ACAP","Capacidad de los analistas",[1.46,1.19,1,.86,.71,null]],
+ ["AEXP","Experiencia en la aplicación",[1.29,1.13,1,.91,.82,null]],
+ ["PCAP","Capacidad de los programadores",[1.42,1.17,1,.86,.70,null]],
+ ["VEXP","Experiencia en la máquina virtual",[1.21,1.10,1,.90,null,null]],
+ ["LEXP","Experiencia en el lenguaje",[1.14,1.07,1,.95,null,null]],
+ ["Proyecto"],
+ ["MODP","Prácticas modernas de programación",[1.24,1.10,1,.91,.82,null]],
+ ["TOOL","Uso de herramientas de software",[1.24,1.10,1,.91,.83,null]],
+ ["SCED","Restricción del calendario",[1.23,1.08,1,1.04,1.10,null]]
+];
+const EJEMPLO_DRV = {RELY:3,DATA:3,CPLX:2,TIME:2,STOR:2,VIRT:2,TURN:2,ACAP:3,AEXP:2,PCAP:3,VEXP:2,LEXP:1,MODP:3,TOOL:2,SCED:2};
+
+const $ = s => document.querySelector(s);
+const fmt = (n,d=1) => isFinite(n) ? n.toLocaleString("es-MX",{minimumFractionDigits:d,maximumFractionDigits:d}) : "—";
+const state = {modelo:"basico", modo:"organico"};
+const touched = () => { $("#ejemplo-chip").hidden = true; };
+
+function cocomo(kloc,modelo,modo,EAF=1){
+  const [a,b,c,d]=COEF[modelo][modo];
+  const nom=a*Math.pow(kloc,b), E=nom*(modelo==="intermedio"?EAF:1), D=c*Math.pow(E,d);
+  return {a,b,c,d,nom,E,D,P:E/D,prod:kloc*1000/E};
+}
+function segs(id,key){
+  document.querySelectorAll(`#${id} button`).forEach(b=>b.addEventListener("click",()=>{
+    state[key]=b.dataset.v; setSeg(id,b.dataset.v); touched(); calc();
+  }));
+}
+function setSeg(id,v){document.querySelectorAll(`#${id} button`).forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===v)));}
+function buildDrivers(){
+  const tb=$("#drivers tbody");
+  DRV.forEach(d=>{
+    if(d.length===1){tb.insertAdjacentHTML("beforeend",`<tr><th colspan="4" style="padding-top:14px">${d[0]}</th></tr>`);return;}
+    const [code,desc,vals]=d;
+    const opts=vals.map((v,i)=>v==null?"":`<option value="${i}">${NIV[i]} (${v.toFixed(2)})</option>`).join("");
+    tb.insertAdjacentHTML("beforeend",`<tr><td><b>${code}</b></td><td>${desc}</td><td><select id="drv-${code}" aria-label="${desc}">${opts}</select></td><td class="num" id="m-${code}"></td></tr>`);
+    const sel=$("#drv-"+code); sel.value=String(EJEMPLO_DRV[code]);
+    sel.addEventListener("change",()=>{touched();calc();});
+  });
+}
+function setDrivers(map){DRV.forEach(d=>{if(d.length>1)$("#drv-"+d[0]).value=String(map?map[d[0]]:2);});}
+function eaf(){
+  let p=1,parts=[];
+  DRV.forEach(d=>{ if(d.length===1)return;
+    const m=d[2][+$("#drv-"+d[0]).value]; p*=m;
+    const c=$("#m-"+d[0]); c.textContent=m.toFixed(2); c.className="num"+(m>1?" mult-hi":m<1?" mult-lo":"");
+    if(m!==1) parts.push(m.toFixed(2));
+  });
+  return {p,parts};
+}
+function renderConst(){
+  $("#const-tbl tbody").innerHTML=Object.entries(COEF[state.modelo]).map(([m,[a,b,c,d]])=>
+    `<tr${m===state.modo?' style="background:var(--accent-soft)"':''}><td>${MODO_NOM[m]}</td><td class="num">${a.toFixed(1)}</td><td class="num">${b.toFixed(2)}</td><td class="num">${c.toFixed(1)}</td><td class="num">${d.toFixed(2)}</td></tr>`).join("");
+}
+function calc(){
+  const kloc=parseFloat($("#kloc").value)||0, sueldo=parseFloat($("#sueldo").value)||0;
+  $("#drivers-panel").hidden = state.modelo!=="intermedio";
+  $("#modo-desc").textContent=MODO_TXT[state.modo];
+  renderConst();
+  const {p:EAF,parts}=eaf();
+  const r=cocomo(kloc,state.modelo,state.modo,EAF);
+  $("#r-e").textContent=fmt(r.E); $("#r-d").textContent=fmt(r.D);
+  $("#r-p").textContent=fmt(r.P); $("#r-prod").textContent=fmt(r.prod,0);
+  $("#r-c").textContent=sueldo?"$"+fmt(r.E*sueldo,0):"—";
+  let f=`${MODO_NOM[state.modo]}, ${state.modelo==="basico"?"básico":"intermedio"}: a=${r.a} b=${r.b} c=${r.c} d=${r.d}\n\n`;
+  if(state.modelo==="intermedio"){
+    f+=`E nom = ${r.a} × ${kloc}^${r.b} = ${r.nom.toFixed(2)} PM\n`;
+    f+=`EAF = ${parts.length?parts.join(" × "):"1.00"} = ${EAF.toFixed(4)}\n`;
+    f+=`E = ${r.nom.toFixed(2)} × ${EAF.toFixed(4)} = ${r.E.toFixed(2)} PM\n`;
+  } else f+=`E = ${r.a} × ${kloc}^${r.b} = ${r.E.toFixed(2)} PM\n`;
+  f+=`D = ${r.c} × ${r.E.toFixed(2)}^${r.d} = ${r.D.toFixed(2)} meses\n`;
+  f+=`P = ${r.E.toFixed(2)} / ${r.D.toFixed(2)} = ${r.P.toFixed(2)} personas`;
+  $("#formula").textContent=f;
+  const all=["organico","semi","empotrado"].map(m=>[m,cocomo(kloc,state.modelo,m,EAF).E]);
+  const max=Math.max(...all.map(x=>x[1]))||1;
+  $("#bars").innerHTML=all.map(([m,e])=>`<div class="bar"><span>${MODO_NOM[m]}</span><div class="track"><div class="fill ${m===state.modo?"on":""}" style="width:${e/max*100}%"></div></div><span>${fmt(e)}</span></div>`).join("");
+}
+
+/* ===================== COSMIC ===================== */
+let procesos=[
+  ["Iniciar sesión",1,1,1,1],
+  ["Registrar alumno",1,1,1,1],
+  ["Registrar una nueva calificación",1,1,1,1],
+  ["Consultar boleta del alumno",1,1,2,0],
+  ["Generar reporte de grupo",1,1,2,0]
+];
+function cosmicCFP(list){return list.reduce((s,p)=>s+p[1]+p[2]+p[3]+p[4],0);}
+function renderCosmic(){
+  $("#cosmic-tbl tbody").innerHTML=procesos.map((p,i)=>`<tr>
+    <td><input class="wide" value="${p[0].replace(/"/g,"&quot;")}" data-i="${i}" data-k="0" aria-label="Nombre del proceso"></td>
+    ${[1,2,3,4].map(k=>`<td class="num"><input type="number" min="0" value="${p[k]}" data-i="${i}" data-k="${k}" aria-label="${"EXRW"[k-1]} de ${p[0]}"></td>`).join("")}
+    <td class="num" id="cfp-${i}">${p[1]+p[2]+p[3]+p[4]}</td>
+    <td><button class="btn ghost sm" data-del="${i}" aria-label="Quitar ${p[0]}">Quitar</button></td></tr>`).join("");
+  document.querySelectorAll("#cosmic-tbl tbody input").forEach(inp=>inp.addEventListener("input",()=>{
+    const i=+inp.dataset.i,k=+inp.dataset.k; procesos[i][k]= k===0?inp.value:Math.max(0,parseInt(inp.value)||0);
+    if(k) $("#cfp-"+i).textContent=procesos[i][1]+procesos[i][2]+procesos[i][3]+procesos[i][4];
+    calcCosmic();
+  }));
+  document.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{procesos.splice(+b.dataset.del,1);renderCosmic();}));
+  calcCosmic();
+}
+function calcCosmic(){
+  const t=[1,2,3,4].map(k=>procesos.reduce((s,p)=>s+p[k],0));
+  ["E","X","R","W"].forEach((c,i)=>$("#c-"+c).textContent=t[i]);
+  const cfp=t.reduce((a,b)=>a+b,0), tasa=parseFloat($("#tasa").value)||0, hm=parseFloat($("#hmes").value)||160;
+  $("#c-T").textContent=cfp; $("#cs-cfp").textContent=cfp;
+  $("#cs-h").textContent=fmt(cfp*tasa,0); $("#cs-pm").textContent=fmt(cfp*tasa/hm,2);
+  $("#cs-formula").textContent=`CFP = ΣE + ΣX + ΣR + ΣW\n    = ${t.join(" + ")} = ${cfp}\nEsfuerzo = ${cfp} × ${tasa} h = ${fmt(cfp*tasa,0)} horas-persona\n         = ${fmt(cfp*tasa,0)} / ${hm} = ${fmt(cfp*tasa/hm,2)} persona-mes`;
+}
+
+/* ===================== PUNTOS DE FUNCIÓN ===================== */
+const FPT=[["EI","Entrada externa",[3,4,6]],["EO","Salida externa",[4,5,7]],["EQ","Consulta externa",[3,4,6]],["ILF","Archivo lógico interno",[7,10,15]],["EIF","Archivo de interfaz externa",[5,7,10]]];
+const FP_EJEMPLO={EI:[6,4,1],EO:[5,3,1],EQ:[4,2,0],ILF:[3,3,1],EIF:[2,1,0]};
+const GSC=[["Comunicación de datos",3],["Procesamiento distribuido",2],["Rendimiento",3],["Configuración muy utilizada",2],["Tasa de transacciones",3],["Entrada de datos en línea",5],["Eficiencia para el usuario final",4],["Actualización en línea",4],["Procesamiento complejo",2],["Reusabilidad",2],["Facilidad de instalación",2],["Facilidad de operación",3],["Múltiples sitios",3],["Facilidad de cambio",3]];
+const LANG=[["Java",53],["C#",54],["C++",53],["C",128],["JavaScript",47],["Python",38],["PHP",67],["Visual Basic",50],["COBOL",107],["SQL",13],["Ensamblador",320]];
+function fpUFP(c){return FPT.reduce((s,[k,,w])=>s+c[k].reduce((a,n,i)=>a+n*w[i],0),0);}
+function buildFP(){
+  $("#fp-tbl tbody").innerHTML=FPT.map(([k,n,w])=>`<tr><td><b>${k}</b><br><span class="hint">${n}</span></td>${w.map((wt,i)=>`<td class="num"><input id="fp-${k}-${i}" type="number" min="0" value="${FP_EJEMPLO[k][i]}" aria-label="${n} ${["baja","media","alta"][i]}"><br><span class="hint">×${wt}</span></td>`).join("")}<td class="num" id="fp-${k}-s"></td></tr>`).join("");
+  $("#gsc-tbl tbody").innerHTML=GSC.map(([n,v],i)=>`<tr><td>${i+1}. ${n}</td><td class="num"><input id="gsc-${i}" type="number" min="0" max="5" value="${v}" aria-label="${n}"></td></tr>`).join("");
+  $("#lang").innerHTML=LANG.map(([l,v])=>`<option value="${v}">${l}</option>`).join("");
+  $("#locfp").value=53;
+  document.querySelectorAll("#v-fp input").forEach(e=>e.addEventListener("input",calcFP));
+  $("#lang").addEventListener("change",()=>{$("#locfp").value=$("#lang").value;calcFP();});
+}
+function setFP(counts,tdiVals){
+  FPT.forEach(([k])=>counts[k].forEach((n,i)=>$(`#fp-${k}-${i}`).value=n));
+  tdiVals.forEach((v,i)=>$("#gsc-"+i).value=v); calcFP();
+}
+function calcFP(){
+  let ufp=0;
+  FPT.forEach(([k,,w])=>{let s=0;w.forEach((wt,i)=>s+=(parseFloat($(`#fp-${k}-${i}`).value)||0)*wt);$(`#fp-${k}-s`).textContent=s;ufp+=s;});
+  let tdi=0; GSC.forEach((_,i)=>tdi+=Math.min(5,Math.max(0,parseFloat($("#gsc-"+i).value)||0)));
+  const vaf=0.65+0.01*tdi, pfa=ufp*vaf, locfp=parseFloat($("#locfp").value)||0, kloc=pfa*locfp/1000;
+  $("#fp-tot").textContent=ufp; $("#tdi-tot").textContent=tdi;
+  $("#fp-ufp").textContent=ufp; $("#fp-vaf").textContent=vaf.toFixed(2);
+  $("#fp-fp").textContent=fmt(pfa); $("#fp-kloc").textContent=fmt(kloc,2);
+  $("#fp-formula").textContent=`UFP = Σ(cantidad × peso) = ${ufp}\nVAF = 0.65 + 0.01 × ${tdi} = ${vaf.toFixed(2)}\nPFA = ${ufp} × ${vaf.toFixed(2)} = ${pfa.toFixed(1)} PF\nKLOC = ${pfa.toFixed(1)} × ${locfp} / 1000 = ${kloc.toFixed(2)}`;
+  return kloc;
+}
+
+/* ===================== EJERCICIOS DE CLASE ===================== */
+const TDI35=[3,3,3,3,3,2,2,2,2,2,2,2,3,3]; // suma 35
+const CHECKS=[
+ {src:"Diapositiva 8 · Ejemplo", t:"COCOMO básico: proyecto orgánico de 30 KLOC",
+  run:()=>{const r=cocomo(30,"basico","organico");return [["E (PM)",85.4,r.E,0.1],["D (meses)",13.6,r.D,0.1],["P (personas)",6,r.P,0.5]];},
+  note:"La diapositiva redondea E a 85.4 y P a 6 personas; el valor exacto es 85.35 PM y 6.3 personas.",
+  load:()=>loadCocomo(30,"basico","organico","Ejemplo de clase: proyecto orgánico de 30 KLOC")},
+ {src:"Diapositiva 12 · Ejemplo", t:"COSMIC: proceso “Iniciar sesión”",
+  run:()=>{const c=cosmicCFP([["",1,1,1,1]]);return [["Tamaño (CFP)",4,c,0],["Esfuerzo (h a 8 h/CFP)",32,c*8,0]];},
+  note:"E: ingresa usuario y contraseña · R: lee credenciales · W: registra el intento en el log · X: muestra el resultado.",
+  load:()=>{procesos=[["Iniciar sesión",1,1,1,1]];$("#tasa").value=8;renderCosmic();show("v-cosmic");}},
+ {src:"Diapositiva 16 · Ejemplo", t:"Puntos de Función: sistema de complejidad media",
+  run:()=>{const c={EI:[0,3,0],EO:[0,2,0],EQ:[0,1,0],ILF:[0,2,0],EIF:[0,1,0]};const u=fpUFP(c);const v=0.65+0.01*35;return [["UFP",53,u,0],["VAF (TDI = 35)",1.00,v,0.001],["PFA",53,u*v,0.05]];},
+  note:"3 EI, 2 EO, 1 EQ, 2 ILF y 1 EIF, todos de complejidad media.",
+  load:()=>{setFP({EI:[0,3,0],EO:[0,2,0],EQ:[0,1,0],ILF:[0,2,0],EIF:[0,1,0]},TDI35);show("v-fp");}},
+ {src:"Diapositiva 19 · Ejercicio 1", t:"COCOMO básico: proyecto semi-acoplado de 50 KLOC",
+  run:()=>{const r=cocomo(50,"basico","semi");return [["E (PM)",239.9,r.E,0.1],["D (meses)",17.0,r.D,0.1],["P (personas)",14.1,r.P,0.1]];},
+  note:"E = 3.0 × 50^1.12 = 239.87 PM · D = 2.5 × 239.87^0.35 = 17.02 meses · P = 14.09 ≈ 14 personas. Resuelto a mano.",
+  load:()=>loadCocomo(50,"basico","semi","Ejercicio 1: proyecto semi-acoplado de 50 KLOC")},
+ {src:"Diapositiva 19 · Ejercicio 2", t:"COSMIC: “Registrar una nueva calificación”",
+  run:()=>{const c=cosmicCFP([["",1,1,1,1]]);return [["Tamaño (CFP)",4,c,0],["Esfuerzo (h a 8 h/CFP)",32,c*8,0]];},
+  note:"E: el profesor captura matrícula, materia y calificación · R: el sistema lee la inscripción del alumno en el grupo · W: guarda la calificación · X: muestra la confirmación. Si además se valida la materia como un grupo de datos aparte, suma una R (5 CFP).",
+  load:()=>{procesos=[["Registrar una nueva calificación",1,1,1,1]];$("#tasa").value=8;renderCosmic();show("v-cosmic");}},
+ {src:"Diapositiva 19 · Ejercicio 3", t:"Puntos de Función: 4 EI, 3 EO, 2 EQ, 3 ILF, 1 EIF (media)",
+  run:()=>{const c={EI:[0,4,0],EO:[0,3,0],EQ:[0,2,0],ILF:[0,3,0],EIF:[0,1,0]};return [["UFP",76,fpUFP(c),0]];},
+  note:"4×4 + 3×5 + 2×4 + 3×10 + 1×7 = 16 + 15 + 8 + 30 + 7 = 76 UFP. Resuelto a mano.",
+  load:()=>{setFP({EI:[0,4,0],EO:[0,3,0],EQ:[0,2,0],ILF:[0,3,0],EIF:[0,1,0]},TDI35);show("v-fp");}}
+];
+function loadCocomo(k,modelo,modo,nombre){
+  $("#kloc").value=k; state.modelo=modelo; state.modo=modo; setSeg("modelo",modelo); setSeg("modo",modo);
+  setDrivers(null); $("#nombre").value=nombre; touched(); show("v-cocomo"); calc();
+}
+function renderChecks(){
+  $("#checks").innerHTML=CHECKS.map((c,i)=>{
+    const rows=c.run(); const ok=rows.every(([,e,g,tol])=>Math.abs(g-e)<=tol+1e-9);
+    const d=v=>Number.isInteger(v)?String(v):fmt(v,2);
+    return `<div class="check"><span class="src">${c.src}</span>
+      <div class="head"><b>${c.t}</b><span class="${ok?"pass":"fail"}">${ok?"✓ Coincide":"✗ No coincide"}</span></div>
+      <div class="tbl-wrap"><table><thead><tr><th></th><th class="num">Esperado</th><th class="num">Aplicación</th></tr></thead><tbody>
+      ${rows.map(([n,e,g])=>`<tr><td>${n}</td><td class="num">${d(e)}</td><td class="num">${fmt(g,2)}</td></tr>`).join("")}</tbody></table></div>
+      <p class="note">${c.note}</p>
+      <div><button class="btn ghost sm" data-load="${i}">Cargar</button></div></div>`;
+  }).join("");
+  document.querySelectorAll("[data-load]").forEach(b=>b.addEventListener("click",()=>CHECKS[+b.dataset.load].load()));
+}
+
+/* ===================== NAVEGACIÓN ===================== */
+function show(id){
+  document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected",String(t.dataset.view===id)));
+  ["v-cocomo","v-cosmic","v-fp","v-ej"].forEach(v=>$("#"+v).classList.toggle("hidden",v!==id));
+}
+document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>show(t.dataset.view)));
+$("#to-cocomo").addEventListener("click",()=>{$("#kloc").value=calcFP().toFixed(2);touched();show("v-cocomo");calc();});
+$("#reset-drivers").addEventListener("click",()=>{setDrivers(null);touched();calc();});
+$("#add-proc").addEventListener("click",()=>{procesos.push(["Nuevo proceso",1,1,0,0]);renderCosmic();});
+["tasa","hmes"].forEach(id=>$("#"+id).addEventListener("input",calcCosmic));
+["kloc","sueldo"].forEach(id=>$("#"+id).addEventListener("input",()=>{touched();calc();}));
+
+buildDrivers(); buildFP(); segs("modelo","modelo"); segs("modo","modo");
+calc(); calcFP(); renderCosmic(); renderChecks();
+</script>
+</body>
+</html>
