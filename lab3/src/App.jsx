@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import { Check, Plus, Trash, ArrowCounterClockwise, WarningCircle } from "@phosphor-icons/react";
 import "./App.css";
 import supabase from "./supabase-client";
@@ -16,19 +16,28 @@ const UNDO_MS = 5000;
 const EASE_OUT = [0.23, 1, 0.32, 1];
 const ROW_SPRING = { type: "spring", duration: 0.35, bounce: 0 };
 const CHECK_SPRING = { type: "spring", duration: 0.3, bounce: 0.3 };
+const FLIGHT_MS = 560;
+
+// Las tareas guardadas usan su id; las que van en camino a Supabase usan una llave temporal
+const rowKey = (todo) => todo.key ?? todo.id;
 
 function App() {
   const [todoList, setTodoList] = useState([]);
   const [newTodo, setNewTodo] = useState("");
   const [status, setStatus] = useState("loading"); // loading | ready | error
   const [error, setError] = useState("");
-  const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState("all");
   const [pendingDelete, setPendingDelete] = useState(null);
   const [staggerDone, setStaggerDone] = useState(false);
-  const [freshId, setFreshId] = useState(null);
+  const [freshKey, setFreshKey] = useState(null);
+  const [flight, setFlight] = useState(null); // { key, text, from: { x, y } }
   const [burst, setBurst] = useState(null); // { id, key } de la última tarea completada
   const deleteTimer = useRef(null);
+  const inputRef = useRef(null);
+  const ghostRef = useRef(null);
+  const flightAnims = useRef([]);
+  const tempCount = useRef(0);
+  const reduceMotion = useReducedMotion();
 
   const consulta = async () => {
     const { data, error } = await supabase
@@ -54,31 +63,83 @@ function App() {
 
   const addTodo = async (e) => {
     e.preventDefault();
-    if (!newTodo.trim()) return; // Evita insertar strings vacíos
+    const name = newTodo.trim();
+    if (!name) return; // Evita insertar strings vacíos
 
-    const newTodoData = {
-      name: newTodo.trim(),
-      isCompleted: false,
+    // Punto de despegue: donde empieza el texto dentro del campo
+    const input = inputRef.current;
+    const rect = input.getBoundingClientRect();
+    const style = getComputedStyle(input);
+    const lineHeight = parseFloat(style.fontSize) * 1.5;
+    const from = {
+      x: rect.left + parseFloat(style.paddingLeft),
+      y: rect.top + (rect.height - lineHeight) / 2,
     };
 
-    setAdding(true);
+    // Inserción optimista: la fila aparece de inmediato y el texto vuela hacia ella
+    const key = `tmp-${++tempCount.current}`;
+    flightAnims.current.forEach((a) => a.finish());
+    setTodoList((prev) => [...prev, { key, id: null, name, isCompleted: false }]);
+    setFreshKey(key);
+    if (!reduceMotion && filter !== "done") setFlight({ key, text: name, from });
+    setNewTodo("");
+    setError("");
+    // El destello dura 1.2 s después de aterrizar; luego la fila queda normal
+    setTimeout(() => setFreshKey((k) => (k === key ? null : k)), FLIGHT_MS + 1300);
+
     const { data, error } = await supabase
       .from("pendientes")
-      .insert([newTodoData])
+      .insert([{ name, isCompleted: false }])
       .select(); // Esto hace que retorne los datos insertados
-    setAdding(false);
 
     if (error) {
       console.log("Error en el insert: ", error);
       setError("No se pudo agregar la tarea. Intenta de nuevo.");
+      setTodoList((prev) => prev.filter((t) => t.key !== key));
+      setNewTodo(name);
     } else {
-      // data será un array, toma el primer elemento
-      setTodoList((prev) => [...prev, data[0]]);
-      setFreshId(data[0].id);
-      setNewTodo("");
-      setError("");
+      // Conserva la llave temporal para que React no vuelva a montar la fila
+      setTodoList((prev) => prev.map((t) => (t.key === key ? { ...data[0], key } : t)));
     }
   };
+
+  // Vuelo del texto: del campo a la posición final de la nueva fila
+  useLayoutEffect(() => {
+    if (!flight) return;
+    const ghost = ghostRef.current;
+    const target = document.querySelector(`[data-key="${flight.key}"] .name`);
+    if (!ghost || !target) {
+      setFlight(null);
+      return;
+    }
+    target.scrollIntoView({ block: "nearest" });
+    const to = target.getBoundingClientRect();
+    const dx = to.left - flight.from.x;
+    const dy = to.top - flight.from.y;
+    const opts = { duration: FLIGHT_MS, fill: "forwards" };
+
+    // Y arranca rápido y X después: el recorrido traza un arco en lugar de una línea recta
+    const outer = ghost.animate(
+      [{ transform: "translateX(0px)" }, { transform: `translateX(${dx}px)` }],
+      { ...opts, easing: "cubic-bezier(0.77, 0, 0.175, 1)" }
+    );
+    const inner = ghost.firstChild.animate(
+      [{ transform: "translateY(0px)" }, { transform: `translateY(${dy}px)` }],
+      { ...opts, easing: "cubic-bezier(0.32, 0.72, 0, 1)" }
+    );
+    // Se "levanta" un poco al despegar y se asienta al aterrizar
+    const lift = ghost.firstChild.firstChild.animate(
+      [{ transform: "scale(1)" }, { transform: "scale(1.05)", offset: 0.3 }, { transform: "scale(1)" }],
+      { ...opts, easing: "cubic-bezier(0.23, 1, 0.32, 1)" }
+    );
+    // Tarjeta detrás del texto: aparece al despegar y se disuelve al aterrizar
+    const card = ghost.firstChild.firstChild.animate(
+      [{ opacity: 0 }, { opacity: 1, offset: 0.15 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }],
+      { ...opts, easing: "ease", pseudoElement: "::before" }
+    );
+    flightAnims.current = [outer, inner, lift, card];
+    inner.onfinish = () => setFlight((f) => (f?.key === flight.key ? null : f));
+  }, [flight]);
 
   const completeTask = async (id, isCompleted) => {
     if (!isCompleted) setBurst((b) => ({ id, key: (b?.key ?? 0) + 1 }));
@@ -170,6 +231,7 @@ function App() {
           Nueva tarea
         </label>
         <input
+          ref={inputRef}
           id="new-todo"
           name="new-todo"
           type="text"
@@ -178,9 +240,9 @@ function App() {
           value={newTodo}
           onChange={(e) => setNewTodo(e.target.value)}
         />
-        <button type="submit" className="btn-primary" disabled={adding || !newTodo.trim()}>
+        <button type="submit" className="btn-primary" disabled={!newTodo.trim()}>
           <Plus size={16} weight="bold" aria-hidden="true" />
-          {adding ? "Agregando…" : "Agregar"}
+          Agregar
         </button>
       </form>
 
@@ -263,10 +325,15 @@ function App() {
             <AnimatePresence mode="popLayout" initial={true}>
               {visible.map((todo, i) => (
                 <motion.li
-                  key={todo.id}
+                  key={rowKey(todo)}
+                  data-key={rowKey(todo)}
                   layout="position"
-                  className={`row${todo.isCompleted ? " is-done" : ""}${todo.id === freshId ? " is-new" : ""}`}
-                  initial={{ opacity: 0, transform: "translateY(8px) scale(0.98)" }}
+                  className={`row${todo.isCompleted ? " is-done" : ""}${flight?.key === rowKey(todo) ? " is-landing" : rowKey(todo) === freshKey ? " is-new" : ""}`}
+                  initial={
+                    rowKey(todo) === freshKey
+                      ? { opacity: 0, transform: "translateY(0px) scale(1)" } // la fila no se mueve: el texto vuela hacia ella
+                      : { opacity: 0, transform: "translateY(8px) scale(0.98)" }
+                  }
                   animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }}
                   exit={{
                     opacity: 0,
@@ -274,12 +341,12 @@ function App() {
                     transition: { duration: 0.15, ease: EASE_OUT },
                   }}
                   transition={{ ...ROW_SPRING, delay: staggerDone ? 0 : Math.min(i, 8) * 0.04 }}
-                  onAnimationComplete={() => todo.id === freshId && setFreshId(null)}
                 >
                   <button
                     className="check"
                     role="checkbox"
                     aria-checked={todo.isCompleted}
+                    disabled={todo.id === null}
                     aria-label={`Marcar "${todo.name}" como ${todo.isCompleted ? "pendiente" : "completada"}`}
                     onClick={() => completeTask(todo.id, todo.isCompleted)}
                   >
@@ -313,6 +380,7 @@ function App() {
                   <button
                     className="icon-btn"
                     aria-label={`Eliminar "${todo.name}"`}
+                    disabled={todo.id === null}
                     onClick={() => deleteTask(todo)}
                   >
                     <Trash size={16} aria-hidden="true" />
@@ -323,6 +391,19 @@ function App() {
           </ul>
         )}
       </section>
+
+      {flight && (
+        <span
+          ref={ghostRef}
+          className="flight"
+          aria-hidden="true"
+          style={{ left: flight.from.x, top: flight.from.y }}
+        >
+          <span className="flight-y">
+            <span className="flight-text">{flight.text}</span>
+          </span>
+        </span>
+      )}
 
       <div className="toast-region" aria-live="polite">
         {pendingDelete && (

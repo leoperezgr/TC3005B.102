@@ -265,6 +265,59 @@ h1 {
   }
 }
 
+/* Texto que vuela del campo a la lista */
+.flight {
+  position: fixed;
+  z-index: 10;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.flight-y {
+  display: block;
+  will-change: transform;
+}
+
+.flight-text {
+  position: relative;
+  isolation: isolate;
+  display: block;
+  padding: 4px 10px;
+  margin: -4px -10px;
+  max-width: min(580px, calc(100vw - 12px));
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transform-origin: left center;
+  will-change: transform;
+}
+
+.flight-text::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  background: var(--surface-3);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+
+@media (prefers-color-scheme: light) {
+  .flight-text::before {
+    box-shadow: 0 8px 24px rgb(17 18 20 / 0.12);
+  }
+}
+
+/* Mientras el texto vuela, la fila reserva su lugar sin mostrarlo */
+.row.is-landing .name {
+  visibility: hidden;
+}
+
 /* Casilla circular (botón con role=checkbox) */
 .check {
   position: relative;
@@ -302,7 +355,12 @@ h1 {
   color: var(--on-primary);
 }
 
-.check:active {
+.check:disabled,
+.icon-btn:disabled {
+  cursor: default;
+}
+
+.check:active:not(:disabled) {
   transform: scale(0.88);
 }
 
